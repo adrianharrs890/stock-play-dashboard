@@ -1,125 +1,260 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-import numpy as np
-
-import streamlit as st
-import pandas as pd
-import plotly.express as px
+import time
 
 # =========================
-# PAGE SETUP
+# PAGE CONFIG
 # =========================
-st.set_page_config(page_title="Trading Dashboard", layout="wide")
-
-st.title("📊 Multi-Strategy Trading Dashboard")
+st.set_page_config(
+    page_title="Trading Dashboard",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # =========================
-# LOAD DATASETS
+# THEME (DARK GREY + READABLE)
 # =========================
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #bfc7d1;
+        color: #000000;
+    }
 
-options_df = pd.read_csv("big_search.csv")
-options_df["expiration"] = pd.to_datetime(options_df["expiration"])
-options_df["run_start"] = pd.to_datetime(options_df["run_start"])
+    section[data-testid="stSidebar"] {
+        background-color: #9aa4b2;
+    }
 
-big_move_df = pd.read_csv("big_move_sample.csv")
-big_move_df["last_update"] = pd.to_datetime(big_move_df["last_update"])
+    html, body, [class*="css"] {
+        color: #000000 !important;
+    }
 
-plays_df = pd.read_csv("plays_sample.csv")
-plays_df["expiration"] = pd.to_datetime(plays_df["expiration"])
-plays_df["run_start"] = pd.to_datetime(plays_df["run_start"])
+    h1, h2, h3 {
+        color: #000000 !important;
+        font-weight: 700;
+    }
+
+    button[data-baseweb="tab"] {
+        color: #000000 !important;
+        font-weight: 600;
+    }
+
+    .stButton button {
+        background-color: #334155;
+        color: white;
+    }
+
+    .stDataFrame {
+        background-color: white;
+    }
+
+    /* FIX captions */
+    div[data-testid="stCaptionContainer"] p {
+        color: #000000 !important;
+    }
+
+    header, .stDeployButton, .viewerBadge {
+        color: white !important;
+        opacity: 1 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.title("📊 Trading Dashboard")
+
+# =========================
+# RUN INFO (AS REQUESTED)
+# =========================
+run_start = "Time I started the script"
+_start = time.time()
+
+# =========================
+# LOAD DATA
+# =========================
+big_search = pd.read_csv("big_search.csv")
+money_flow = pd.read_csv("money_flow.csv")
+entry_table = pd.read_csv("entry_table.csv")
+plays = pd.read_csv("plays.csv")
+big_move = pd.read_csv("big_move.csv")
+
+# =========================
+# DATE CLEANING
+# =========================
+big_search["expiration"] = pd.to_datetime(big_search["expiration"]).dt.date
+plays["expiration"] = pd.to_datetime(plays["expiration"]).dt.date
+big_move["last_update"] = pd.to_datetime(big_move["last_update"]).dt.date
+entry_table["dates"] = pd.to_datetime(entry_table["dates"]).dt.date
+
+# =========================
+# CLEAN COLUMNS
+# =========================
+def clean_columns(df):
+    df = df.copy()
+    df.columns = [c.replace("_", " ").title() for c in df.columns]
+    return df
+
+# =========================
+# FILTERS
+# =========================
+st.sidebar.header("🎛️ Filters")
+
+main_tickers = (
+    big_search["ticker"]
+    .value_counts()
+    .head(10)
+    .index
+    .tolist()
+)
+
+selected_tickers = st.sidebar.multiselect(
+    "Main Tickers (Top 10)",
+    options=main_tickers,
+    default=main_tickers
+)
+
+all_expirations = sorted(big_search["expiration"].dropna().unique())
+
+selected_expirations = st.sidebar.multiselect(
+    "Expiration Dates",
+    options=all_expirations,
+    default=all_expirations
+)
+
+# =========================
+# FILTER DATA
+# =========================
+big_search_f = big_search[
+    (big_search["ticker"].isin(selected_tickers)) &
+    (big_search["expiration"].isin(selected_expirations))
+]
+
+big_move_f = big_move[big_move["Symbol"].isin(selected_tickers)]
+plays_f = plays.copy()
+money_flow_f = money_flow.copy()
+entry_table_f = entry_table.copy()
 
 # =========================
 # TABS
 # =========================
-tab1, tab2, tab3 = st.tabs([
-    "📈 Options Strategies",
-    "⚡ Big Move Signals",
-    "💰 Plays"
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📈 Big Search",
+    "💸 Money Flow",
+    "📅 Entry Table",
+    "💰 Plays",
+    "⚡ Big Moves"
 ])
 
 # =========================
-# TAB 1 - OPTIONS (WITH GRAPHS)
+# TAB 1
 # =========================
 with tab1:
-    st.subheader("Options Strategy Data")
+    st.subheader("Big Search Strategies")
+    st.caption("Searching the market for options with an edge")
 
-    # Ticker filter
-    option_tickers = st.multiselect(
-        "Filter Options Tickers",
-        options=sorted(options_df["ticker"].unique()),
-        default=sorted(options_df["ticker"].unique())
-    )
+    df = big_search_f
+    st.dataframe(clean_columns(df), use_container_width=True, hide_index=True)
 
-    filtered_options = options_df[
-        options_df["ticker"].isin(option_tickers)
-    ]
+    if "roi" in df.columns:
+        col1, col2 = st.columns(2)
 
-    st.dataframe(filtered_options, use_container_width=True)
+        mean_roi = df["roi"].mean()
+        std_roi = df["roi"].std()
 
-    # Metrics
-    col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### Avg ROI")
+            st.markdown(f"## {round(mean_roi, 2)}")
 
-    with col1:
-        st.metric("Avg ROI", round(filtered_options["roi"].mean(), 2))
+        with col2:
+            st.markdown("### Std Dev ROI")
+            st.markdown(f"## {round(std_roi, 2)}")
 
-    with col2:
-        st.metric("Avg Prob ITM", round(filtered_options["prob_ITM"].mean(), 3))
-
-    # 📈 ROI DISTRIBUTION
-    st.subheader("📈 ROI Distribution")
-    fig1 = px.histogram(
-        filtered_options,
-        x="roi",
-        color="type",
-        nbins=20
-    )
-    st.plotly_chart(fig1, use_container_width=True)
-
-    # 📊 AVG ROI BY TICKER
-    st.subheader("📊 Average ROI by Ticker")
-    ticker_avg = filtered_options.groupby("ticker")["roi"].mean().reset_index()
-
-    fig2 = px.bar(
-        ticker_avg,
-        x="ticker",
-        y="roi"
-    )
-    st.plotly_chart(fig2, use_container_width=True)
+        fig = px.histogram(df, x="roi", nbins=20)
+        st.plotly_chart(fig, use_container_width=True)
 
 # =========================
-# TAB 2 - BIG MOVES (TABLE ONLY)
+# TAB 2
 # =========================
 with tab2:
-    st.subheader("Big Move Signal Tracker")
+    st.subheader("Money Flow")
+    st.caption("Industries where capital is actively flowing")
 
-    move_tickers = st.multiselect(
-        "Filter Big Move Tickers",
-        options=sorted(big_move_df["Symbol"].unique()),
-        default=sorted(big_move_df["Symbol"].unique())
-    )
-
-    filtered_moves = big_move_df[
-        big_move_df["Symbol"].isin(move_tickers)
-    ]
-
-    st.dataframe(filtered_moves, use_container_width=True)
+    st.dataframe(clean_columns(money_flow_f), use_container_width=True, hide_index=True)
 
 # =========================
-# TAB 3 - PLAYS (TABLE ONLY)
+# TAB 3
 # =========================
 with tab3:
-    st.subheader("Trade Plays Dashboard")
+    st.subheader("Entry Signals")
+    st.caption("Over-market and momentum-based signals")
 
-    st.dataframe(plays_df, use_container_width=True)
+    st.dataframe(clean_columns(entry_table_f), use_container_width=True, hide_index=True)
 
-    col1, col2 = st.columns(2)
+# =========================
+# TAB 4
+# =========================
+with tab4:
+    st.subheader("Plays")
+    st.caption("Statistical arbitrage strategies generated internally")
 
-    with col1:
-        st.metric("Avg ROI", round(plays_df["roi"].mean(), 2))
+    shares_df = plays_f[plays_f["strategy_choice"] == "shares"]
+    other_df = plays_f[plays_f["strategy_choice"] != "shares"]
 
-    with col2:
-        st.metric("Max ROI", round(plays_df["roi"].max(), 2))
+    shares_display = clean_columns(shares_df.drop(
+        columns=["max_loss_dollars", "roi", "expiration", "buy_target"],
+        errors="ignore"
+    ))
 
+    st.markdown("### Shares (Simplified View)")
+    st.dataframe(shares_display, use_container_width=True, hide_index=True)
+
+    st.markdown("### Other Strategies")
+    st.dataframe(clean_columns(other_df), use_container_width=True, hide_index=True)
+
+    st.markdown("""
+    ---
+    ### 🧠 Signal Definitions
+    - **Signal 1** = Stat arbitrage signal  
+    - **Signal 2** = Stat arbitrage + overall market signal  
+    """)
+
+# =========================
+# TAB 5
+# =========================
+with tab5:
+    st.subheader("Big Move Signals")
+    st.caption("Price increases or decreases with abnormal volume over the last 7 days")
+
+    df = big_move_f
+    st.dataframe(clean_columns(df), use_container_width=True, hide_index=True)
+
+    numeric_cols = df.select_dtypes(include="number")
+
+    if len(numeric_cols.columns) > 0:
+        col = numeric_cols.columns[0]
+
+        mean_val = df[col].mean()
+        std_val = df[col].std()
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown(f"### Mean ({col})")
+            st.markdown(f"## {round(mean_val, 2)}")
+
+        with col2:
+            st.markdown(f"### Std Dev ({col})")
+            st.markdown(f"## {round(std_val, 2)}")
+
+# =========================
+# FOOTER
+# =========================
+runtime = round(time.time() - _start, 4)
+
+st.markdown(f"""
+---
+### 🧠 System Notes
+- **Run Start** = {run_start}
+- **Run Time** = time it ran
+""")
 # in terminal: streamlit run app.py
